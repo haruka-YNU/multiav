@@ -219,42 +219,42 @@ class CKasperskyScanner(CAvScanner):
   def __init__(self, cfg_parser):
     CAvScanner.__init__(self, cfg_parser)
     self.name = "Kaspersky"
-    # Considered fast because it requires the daemon to be running.
-    # This is why...
     self.speed = AV_SPEED_FAST
-    self.pattern = r"\d+-\d+-\d+ \d+:\d+:\d+\W(.*)\Wdetected\W(.*)"
+    self.pattern = r"DetectName=(.*)\n.*\n.*\n.*\nFileName=(.*)//"
     self.pattern2 = '(.*)(INFECTED|SUSPICION UDS:|SUSPICION HEUR:|WARNING HEUR:)(.*)'    
 
   def build_cmd(self, path):
     parser = self.cfg_parser
     scan_path = parser.get(self.name, "PATH")
-    scan_args = parser.get(self.name, "ARGUMENTS")
-    args = [scan_path]
     ver = os.path.basename(scan_path)
     if ver == "kavscanner":
+      scan_args = parser.get(self.name, "ARGUMENTS")
+      args = [scan_path]
       args.extend(scan_args.split(" "))
-      args.append(path)      
-    elif ver == "kav":
-      args.extend(scan_args.replace("$FILE", path).split(" "))
-    return args
+      args.append(path)     
+      return args
+    elif ver == "kesl-control":
+      scan_args1 = parser.get(self.name, "ARGUMENTS1")
+      scan_args2 = parser.get(self.name, "ARGUMENTS2")
+      args1.extend(scan_args1.split(' '))
+      args1.append('FirstAction=Skip')
+      args1.append('ScanScope.item_0000.Path='+path)
+      args2.extend(scan_args2.split(' '))
+      return args1, args2
 
   def scan(self, path):
     if self.pattern is None:
       Exception("Not implemented")
-
-    try:
-      cmd = self.build_cmd(path)
-    except: # There is no entry in the *.cfg file for this AV engine?
-      pass
-
-    try: # stderr=devnull because kavscanner writes socket info
-      with open(os.devnull, "w") as devnull:      
-        output = check_output(cmd, stderr=devnull)
-
-    except CalledProcessError as e:
-      output = e.output
-    ver = os.path.basename(cmd.pop(0))
+    parser = self.cfg_parser
+    scan_path = parser.get(self.name, "PATH")
+    ver = os.path.basename(scan_path)
     if ver == "kavscanner":
+      cmd = self.build_cmd(path)
+      try: # stderr=devnull because kavscanner writes socket info
+        with open(os.devnull, "w") as devnull:      
+          output = check_output(cmd, stderr=devnull)
+      except CalledProcessError as e:
+        output = e.output
       self.file_index = 0
       self.malware_index = 2
       index = 0
@@ -275,10 +275,21 @@ class CKasperskyScanner(CAvScanner):
       for match in matches:
         self.results[match[self.file_index].split('\x08')[0].rstrip()] =\
             match[self.malware_index].lstrip().rstrip()
-    elif ver == "kav":
+
+    elif ver == "kesl-control":
+      try:
+        cmd1, cmd2 = self.build_cmd(path)
+      except: # There is no entry in the *.cfg file for this AV engine?
+        pass
+      try: # stderr=devnull because kavscanner writes socket info
+        call(cmd1)
+        output = check_output(cmd2)
+      except CalledProcessError as e:
+        output = e.output
+
       matches = re.findall(self.pattern, output, re.IGNORECASE|re.MULTILINE)
       for match in matches:
-        self.results[match[self.file_index]] = match[self.malware_index]
+        self.results[match[1]] = match[0]
 
     return len(self.results) > 0
 
@@ -677,4 +688,3 @@ class CMultiAV:
       os.unlink(fname)
 
     return ret
-
