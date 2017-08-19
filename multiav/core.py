@@ -236,6 +236,8 @@ class CKasperskyScanner(CAvScanner):
     elif ver == "kesl-control":
       scan_args1 = parser.get(self.name, "ARGUMENTS1")
       scan_args2 = parser.get(self.name, "ARGUMENTS2")
+      args1 = [scan_path]
+      args2 = [scan_path]
       args1.extend(scan_args1.split(' '))
       args1.append('FirstAction=Skip')
       args1.append('ScanScope.item_0000.Path='+path)
@@ -277,10 +279,7 @@ class CKasperskyScanner(CAvScanner):
             match[self.malware_index].lstrip().rstrip()
 
     elif ver == "kesl-control":
-      try:
-        cmd1, cmd2 = self.build_cmd(path)
-      except: # There is no entry in the *.cfg file for this AV engine?
-        pass
+      cmd1, cmd2 = self.build_cmd(path)
       try: # stderr=devnull because kavscanner writes socket info
         call(cmd1)
         output = check_output(cmd2)
