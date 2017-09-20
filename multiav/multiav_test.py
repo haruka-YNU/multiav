@@ -2,9 +2,16 @@
 
 from pprint import pprint
 import time
-import pickle
 import os
-from core import CMultiAV, AV_SPEED_ALL
+import sys
+from pymongo import MongoClient
+from multiav.core import CMultiAV, AV_SPEED_ALL
+
+client = MongoClient('mongodb://192.168.10.101:27017/email')
+db = client.email
+collection_name = sys.argv[1].split('/')[3] + '.' + sys.argv[1].split('/')[4]
+collection = db[collection_name]
+floder_list = []
 
 def call_multiav(scan_path):
     multi_av = CMultiAV('./config.cfg')
@@ -17,32 +24,35 @@ def call_multiav(scan_path):
                 break
     return AV_result_list
 
-def scan(path):
+def loop(root):
+    for path in os.listdir(root):
+        if os.path.isfile(os.path.join(root, path)):
+            if root not in floder_list:
+                floder_list.append(root)
+        else:
+            loop(os.path.join(root, path))
+    return floder_list
+
+def scan(floder_list):
     fmt = '\033[0;3{}m{}\033[0m'.format
     count = 1
-    mal_list = []
-    total_cost = 0.0
-    total = len(os.listdir(path))
-    for file_dir in os.listdir(path):
-        print '(%d/%d)%s :' % (count, total, file_dir)
-        scan_path = os.path.join(path, file_dir)
+    total = len(floder_list)
+    for file_dir in floder_list:
+        print '(%d/%d)%s:' % (count, total, file_dir)
         t0 = time.time()
-        AV_result_list = call_multiav(scan_path)
-        cost = time.time() - t0
+        AV_result_list = call_multiav(file_dir)
         if len(AV_result_list) != 0:
-            mal_list.append(count)
+            collection.update({"FileName":file_dir.split('/')[-1]},
+                              {"$set":{"IsMalicious":True,"AVInfo":AV_result_list}})
             for r in AV_result_list:
                 print fmt(1, '             '+ r)
         else:
-             print fmt(2, '             Clear')
+            print fmt(2, '             Clear')
+        cost = time.time() - t0
         print "             %.3fs taken" % (time.time() - t0)
         count += 1
-        total_cost += cost
-    ava_cost = total_cost/2729
-    with open('../result/McAfee.txt', 'w') as f:
-        pickle.dump(mal_list, f)
-    return ava_cost
+    return None
 
 if __name__ == "__main__":
-    re = scan('/root/git/bulk_files/')
-    print re
+    floder_list = loop(sys.argv[1])
+    scan(floder_list)
